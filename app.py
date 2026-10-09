@@ -83,6 +83,24 @@ def read_gauge_bytes(data: bytes, gauge_id: str):
     return out
 
 
+@app.get("/api/qr")
+def api_qr():
+    """Return a QR code PNG for the given text (used for gauge labels)."""
+    import qrcode
+    from qrcode.constants import ERROR_CORRECT_H
+    text = request.args.get("text", "")
+    if not text or len(text) > 500:
+        return "bad request", 400
+    qr = qrcode.QRCode(version=None, error_correction=ERROR_CORRECT_H,
+                       box_size=12, border=2)
+    qr.add_data(text)
+    qr.make(fit=True)
+    buf = io.BytesIO()
+    qr.make_image(fill_color="black", back_color="white").save(buf, format="PNG")
+    buf.seek(0)
+    return send_file(buf, mimetype="image/png")
+
+
 @app.get("/health")
 def health():
     return {"ok": True}
