@@ -111,17 +111,33 @@ function esc(s) { return String(s == null ? "" : s).replace(/[&<>"]/g, c => ({"&
 
 function shoot(gid) { document.getElementById("file-" + gid).click(); }
 
+// 휴대폰에서 보내기 전에 사진을 1280px로 축소 (전송+판독 속도 향상)
+async function shrinkPhoto(file) {
+  try {
+    const bmp = await createImageBitmap(file, { imageOrientation: "from-image" });
+    const scale = Math.min(1, 1280 / Math.max(bmp.width, bmp.height));
+    const w = Math.round(bmp.width * scale), h = Math.round(bmp.height * scale);
+    const c = document.createElement("canvas");
+    c.width = w; c.height = h;
+    c.getContext("2d").drawImage(bmp, 0, 0, w, h);
+    const blob = await new Promise(res => c.toBlob(res, "image/jpeg", 0.85));
+    bmp.close();
+    return blob || file;
+  } catch (e) { return file; }
+}
+
 async function onPhoto(g, file) {
   if (!file) return;
   const card = document.getElementById("card-" + g.id);
   const res = card.querySelector(".res");
   res.style.display = "block";
-  res.innerHTML = `<img class="thumb" id="thumb-${g.id}"><div style="margin-top:8px;color:#666">판독 중...</div>`;
+  res.innerHTML = `<img class="thumb" id="thumb-${g.id}"><div style="margin-top:8px;color:#666">전송·판독 중...</div>`;
   document.getElementById("thumb-" + g.id).src = URL.createObjectURL(file);
 
+  const small = await shrinkPhoto(file);
   const fd = new FormData();
   fd.append("gauge_id", g.id);
-  fd.append("photo", file);
+  fd.append("photo", small, "photo.jpg");
   let data;
   try {
     const r = await fetch("/api/read", { method: "POST", body: fd });
