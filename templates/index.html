@@ -10,17 +10,38 @@
   header { background: #1F4E78; color: #fff; padding: 16px; }
   header h1 { margin: 0; font-size: 20px; }
   main { padding: 12px; max-width: 640px; margin: 0 auto; }
+  .card { background: #fff; border-radius: 12px; padding: 14px; margin-bottom: 12px; box-shadow: 0 1px 4px rgba(0,0,0,.08); }
+  .card h2 { margin: 0 0 4px; font-size: 17px; }
+  .card p { margin: 0 0 10px; font-size: 13px; color: #666; }
+  .boilers { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
+  .boilers button { flex: 1 1 28%; padding: 14px 6px; font-size: 16px; font-weight: bold; border: 2px solid #1F4E78; border-radius: 10px; background: #fff; color: #1F4E78; cursor: pointer; }
+  .boilers button.on { background: #1F4E78; color: #fff; }
+  .btn { display: block; width: 100%; padding: 14px; font-size: 17px; font-weight: bold; border: none; border-radius: 10px; cursor: pointer; }
+  .btn-go { background: #2e7d32; color: #fff; }
+  .btn:disabled { opacity: .4; }
   .equip-link { display: block; background: #fff; border-radius: 12px; padding: 16px; margin-bottom: 10px; text-decoration: none; color: #222; box-shadow: 0 1px 4px rgba(0,0,0,.08); }
   .equip-link b { font-size: 17px; }
   .equip-link span { display: block; font-size: 13px; color: #666; margin-top: 4px; }
   .sec { font-size: 14px; font-weight: bold; color: #1F4E78; margin: 16px 4px 8px; }
-  .foot { text-align: center; margin: 20px 0; }
+  .foot { text-align: center; margin: 20px 0; display: flex; flex-direction: column; gap: 10px; }
   .foot a { color: #1F4E78; font-size: 15px; }
 </style>
 </head>
 <body>
 <header><h1>🔧 Boiler Gauge Check</h1></header>
 <main>
+  <div class="card">
+    <h2>Start inspection</h2>
+    <p>Select the boilers running now — their pumps and gauges will be listed for photo check.</p>
+    <div class="boilers" id="boilers">
+      {% for b in boilers %}
+      <button data-id="{{ b.id }}">{{ b.id }}</button>
+      {% endfor %}
+    </div>
+    <button class="btn btn-go" id="startBtn" disabled>Select boilers first</button>
+  </div>
+
+  <div class="sec">All equipment</div>
   <div class="sec">Cathode</div>
   {% for it in items if it.system == "Cathode" %}
   <a class="equip-link" href="/e/{{ it.id }}"><b>{{ it.name }}</b><span>{{ it.kind }} · {{ it.id }}</span></a>
@@ -29,7 +50,25 @@
   {% for it in items if it.system == "Anode" %}
   <a class="equip-link" href="/e/{{ it.id }}"><b>{{ it.name }}</b><span>{{ it.kind }} · {{ it.id }}</span></a>
   {% endfor %}
-  <div class="foot"><a href="/api/export">📥 Download readings CSV</a></div>
+  <div class="foot">
+    <a href="/api/export">📥 Download readings CSV</a>
+    <a href="/admin">⚙️ Settings (equipment &amp; gauges)</a>
+  </div>
 </main>
+<script>
+const sel = new Set();
+const btns = document.querySelectorAll("#boilers button");
+const startBtn = document.getElementById("startBtn");
+btns.forEach(b => b.onclick = () => {
+  const id = b.dataset.id;
+  if (sel.has(id)) { sel.delete(id); b.classList.remove("on"); }
+  else { sel.add(id); b.classList.add("on"); }
+  startBtn.disabled = sel.size === 0;
+  startBtn.textContent = sel.size === 0 ? "Select boilers first" : `Start inspection (${sel.size} boiler${sel.size > 1 ? "s" : ""})`;
+});
+startBtn.onclick = () => {
+  if (sel.size) location.href = "/inspect?boilers=" + [...sel].join(",");
+};
+</script>
 </body>
 </html>

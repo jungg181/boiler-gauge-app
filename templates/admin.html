@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Settings</title>
+<style>
+  * { box-sizing: border-box; }
+  body { font-family: -apple-system, "Segoe UI", sans-serif; margin: 0; background: #f2f4f7; color: #222; }
+  header { background: #37474F; color: #fff; padding: 16px; }
+  header h1 { margin: 0; font-size: 20px; }
+  header p { margin: 4px 0 0; font-size: 13px; opacity: .85; }
+  main { padding: 12px; max-width: 720px; margin: 0 auto; }
+  .card { background: #fff; border-radius: 12px; padding: 14px; margin-bottom: 12px; box-shadow: 0 1px 4px rgba(0,0,0,.08); }
+  .card h2 { margin: 0 0 8px; font-size: 17px; }
+  .card h3 { margin: 14px 0 6px; font-size: 15px; color: #1F4E78; }
+  .btn { display: block; width: 100%; padding: 13px; font-size: 16px; font-weight: bold; border: none; border-radius: 10px; margin-top: 10px; cursor: pointer; }
+  .btn-save { background: #2e7d32; color: #fff; }
+  .btn-add { background: #1F4E78; color: #fff; }
+  .btn-del { background: #fff; color: #c62828; border: 1px solid #c62828; font-weight: normal; font-size: 14px; padding: 8px; }
+  .btn-sec { background: #e0e0e0; color: #222; }
+  .row { display: flex; gap: 8px; }
+  .row > * { flex: 1; }
+  label { display: block; font-size: 13px; color: #555; margin: 8px 0 2px; }
+  input[type=text], input[type=number], input[type=password], select { width: 100%; padding: 10px; font-size: 15px; border: 1px solid #bbb; border-radius: 8px; }
+  .gauge { border: 1px solid #ddd; border-radius: 10px; padding: 10px; margin: 8px 0; background: #fafafa; }
+  .gauge .gid { font-size: 13px; color: #888; }
+  .chk { display: flex; gap: 16px; margin-top: 8px; font-size: 15px; }
+  .chk label { margin: 0; display: flex; align-items: center; gap: 6px; font-size: 15px; color: #222; }
+  .chk input { width: 20px; height: 20px; }
+  .warn { background: #fff8e1; border: 1px solid #f0c36d; border-radius: 8px; padding: 10px; font-size: 13px; margin-bottom: 12px; }
+  .sys { font-size: 14px; font-weight: bold; color: #37474F; margin: 18px 4px 8px; text-transform: uppercase; letter-spacing: 1px; }
+  #toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); background: #222; color: #fff; padding: 12px 20px; border-radius: 24px; display: none; font-size: 15px; z-index: 50; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+</style>
+</head>
+<body>
+<header><h1>⚙️ Settings</h1><p>Equipment, gauges &amp; calibration</p></header>
+<main>
+  <div id="login" class="card">
+    <h2>Admin login</h2>
+    <label>Password</label>
+    <input type="password" id="pw" placeholder="Admin password">
+    <button class="btn btn-add" onclick="doLogin()">Log in</button>
+    <div class="warn" style="margin-top:12px;margin-bottom:0">Default password: <b>ChangeMe123</b> — ask Muse to change it.</div>
+  </div>
+
+  <div id="panel" style="display:none">
+    <div class="warn">Settings save to the server immediately. After making changes, tap <b>Download backup</b> and send the file to Muse so it is stored permanently (the free server can lose files when it restarts).</div>
+    <div class="row" style="margin-bottom:12px">
+      <button class="btn btn-save" onclick="saveAll()">💾 Save all</button>
+    </div>
+    <div id="systems"></div>
+    <div class="card">
+      <h2>Add equipment</h2>
+      <div class="grid2">
+        <div><label>System</label><select id="ne-sys"></select></div>
+        <div><label>Type</label><select id="ne-kind"><option value="boilers">Boiler</option><option value="pumps">Pump</option></select></div>
+      </div>
+      <label>ID (e.g. CP-6)</label><input type="text" id="ne-id" placeholder="CP-6">
+      <label>Name (e.g. Cathode Pump 6)</label><input type="text" id="ne-name" placeholder="Cathode Pump 6">
+      <div id="ne-pump-extra">
+        <label>Connected boilers (for pumps, comma separated — e.g. CB-1,CB-2)</label>
+        <input type="text" id="ne-boilers" placeholder="CB-1">
+      </div>
+      <button class="btn btn-add" onclick="addEquipment()">+ Add equipment</button>
+    </div>
+    <div class="row">
+      <button class="btn btn-save" onclick="saveAll()">💾 Save all</button>
+    </div>
+    <div class="row">
+      <button class="btn btn-sec" onclick="backup()">📥 Download backup</button>
+      <button class="btn btn-sec" onclick="doLogout()">Log out</button>
+    </div>
+    <div style="text-align:center;margin:16px 0"><a href="/" style="color:#1F4E78">‹ Back to home</a></div>
+  </div>
+</main>
+<div id="toast"></div>
+
+<script>
+let CFG = null;
+
+function toast(msg) {
+  const t = document.getElementById("toast");
+  t.textContent = msg; t.style.display = "block";
+  setTimeout(() => t.style.display = "none", 2200);
+}
+function esc(s) { return String(s == null ? "" : s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+
+async function api(path, opts = {}) {
+  const r = await fetch(path, opts);
+  if (r.status === 401) { showLogin(); throw new Error("login"); }
+  return r;
+}
+function showLogin() {
+  document.getElementById("login").style.display = "block";
+  document.getElementById("panel").style.display = "none";
+}
+
+async function doLogin() {
+  const pw = document.getElementById("pw").value;
+  const r = await fetch("/api/admin/login", { method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({ password: pw }) });
+  if (r.ok) { document.getElementById("pw").value = ""; load(); }
+  else toast("Wrong password");
+}
+async function doLogout() {
+  await fetch("/api/admin/logout", { method: "POST" });
+  showLogin();
+}
+
+async function load() {
+  try {
+    const r = await api("/api/admin/config");
+    CFG = await r.json();
+  } catch (e) { return; }
+  document.getElementById("login").style.display = "none";
+  document.getElementById("panel").style.display = "block";
+  render();
+}
+
+function calOf(gid) { return CFG.calibration[gid] || {}; }
+
+function gaugeHtml(sysName, grp, dev, g) {
+  const cal = calOf(g.id);
+  const num = (v) => v == null ? "" : v;
+  return `<div class="gauge" id="gauge-${g.id}">
+    <div class="gid">${esc(g.id)}</div>
+    <label>Gauge name</label>
+    <input type="text" data-f="name" value="${esc(g.name)}">
+    <div class="grid2">
+      <div><label>Item (e.g. Discharge pressure)</label><input type="text" data-f="item" value="${esc(g.item || "")}"></div>
+      <div><label>Unit (e.g. psi)</label><input type="text" data-f="unit" value="${esc(g.unit || "")}"></div>
+    </div>
+    <div class="chk">
+      <label><input type="checkbox" data-f="check_running" ${g.check_running === "O" ? "checked" : ""}> Check when running</label>
+      <label><input type="checkbox" data-f="check_stopped" ${g.check_stopped === "O" ? "checked" : ""}> Check when stopped</label>
+    </div>
+    <h3>Calibration (needle angle → value)</h3>
+    <div class="grid2">
+      <div><label>Angle at min scale (°)</label><input type="number" step="any" data-c="angle_min" value="${num(cal.angle_min)}"></div>
+      <div><label>Value at min</label><input type="number" step="any" data-c="value_min" value="${num(cal.value_min)}"></div>
+      <div><label>Angle at max scale (°)</label><input type="number" step="any" data-c="angle_max" value="${num(cal.angle_max)}"></div>
+      <div><label>Value at max</label><input type="number" step="any" data-c="value_max" value="${num(cal.value_max)}"></div>
+    </div>
+    <button class="btn btn-del" onclick="delGauge('${esc(sysName)}','${grp}','${esc(dev.id)}','${esc(g.id)}')">Delete gauge</button>
+  </div>`;
+}
+
+function render() {
+  const box = document.getElementById("systems");
+  box.innerHTML = "";
+  const sysSel = document.getElementById("ne-sys");
+  sysSel.innerHTML = "";
+  CFG.equipment.systems.forEach(sys => {
+    const o = document.createElement("option");
+    o.value = sys.name; o.textContent = sys.name;
+    sysSel.appendChild(o);
+    const h = document.createElement("div");
+    h.className = "sys"; h.textContent = sys.name;
+    box.appendChild(h);
+    ["boilers", "pumps"].forEach(grp => {
+      (sys[grp] || []).forEach(dev => {
+        const card = document.createElement("div");
+        card.className = "card";
+        card.id = "dev-" + dev.id;
+        let gauges = (dev.gauges || []).map(g => gaugeHtml(sys.name, grp, dev, g)).join("");
+        card.innerHTML = `
+          <h2>${grp === "boilers" ? "🔥" : "💧"} ${esc(dev.id)}</h2>
+          <label>Equipment name</label>
+          <input type="text" data-dev="name" value="${esc(dev.name)}">
+          ${grp === "pumps" ? `<label>Connected boilers (comma separated)</label><input type="text" data-dev="boilers" value="${esc((dev.boilers || []).join(","))}">` : ""}
+          <h3>Gauges (${(dev.gauges || []).length})</h3>
+          <div class="gauges">${gauges || '<div style="font-size:13px;color:#888">No gauges yet.</div>'}</div>
+          <button class="btn btn-add" onclick="addGauge('${esc(sys.name)}','${grp}','${esc(dev.id)}')">+ Add gauge</button>
+          <button class="btn btn-del" onclick="delEquipment('${esc(sys.name)}','${grp}','${esc(dev.id)}')">Delete equipment</button>`;
+        box.appendChild(card);
+      });
+    });
+  });
+}
+
+function findDev(sysName, grp, devId) {
+  const sys = CFG.equipment.systems.find(s => s.name === sysName);
+  return { sys, dev: sys[grp].find(d => d.id === devId) };
+}
+
+function addEquipment() {
+  const sysName = document.getElementById("ne-sys").value;
+  const grp = document.getElementById("ne-kind").value;
+  const id = document.getElementById("ne-id").value.trim().toUpperCase();
+  const name = document.getElementById("ne-name").value.trim();
+  if (!id || !name) { toast("Enter ID and name"); return; }
+  const sys = CFG.equipment.systems.find(s => s.name === sysName);
+  if (sys[grp].some(d => d.id === id)) { toast("ID already exists"); return; }
+  const dev = { id, name, gauges: [] };
+  if (grp === "pumps") dev.boilers = document.getElementById("ne-boilers").value.split(",").map(s => s.trim().toUpperCase()).filter(Boolean);
+  sys[grp].push(dev);
+  document.getElementById("ne-id").value = "";
+  document.getElementById("ne-name").value = "";
+  document.getElementById("ne-boilers").value = "";
+  render();
+  toast("Added — tap Save all");
+}
+
+function addGauge(sysName, grp, devId) {
+  const { dev } = findDev(sysName, grp, devId);
+  let n = 1;
+  dev.gauges.forEach(g => {
+    const m = g.id.match(/-G(\d+)$/);
+    if (m) n = Math.max(n, parseInt(m[1]) + 1);
+  });
+  dev.gauges.push({ id: `${devId}-G${n}`, name: `Gauge ${n}`, item: "", unit: "", check_running: "O", check_stopped: "" });
+  render();
+  toast("Added — tap Save all");
+}
+
+function delGauge(sysName, grp, devId, gid) {
+  if (!confirm(`Delete gauge ${gid}?`)) return;
+  const { dev } = findDev(sysName, grp, devId);
+  dev.gauges = dev.gauges.filter(g => g.id !== gid);
+  delete CFG.calibration[gid];
+  render();
+}
+
+function delEquipment(sysName, grp, devId) {
+  if (!confirm(`Delete equipment ${devId} and all its gauges?`)) return;
+  const { sys } = findDev(sysName, grp, devId);
+  const dev = sys[grp].find(d => d.id === devId);
+  (dev.gauges || []).forEach(g => delete CFG.calibration[g.id]);
+  sys[grp] = sys[grp].filter(d => d.id !== devId);
+  render();
+}
+
+function collect() {
+  CFG.equipment.systems.forEach(sys => {
+    ["boilers", "pumps"].forEach(grp => {
+      (sys[grp] || []).forEach(dev => {
+        const card = document.getElementById("dev-" + dev.id);
+        if (!card) return;
+        dev.name = card.querySelector('[data-dev="name"]').value.trim() || dev.name;
+        const bIn = card.querySelector('[data-dev="boilers"]');
+        if (bIn && grp === "pumps") dev.boilers = bIn.value.split(",").map(s => s.trim().toUpperCase()).filter(Boolean);
+        (dev.gauges || []).forEach(g => {
+          const el = document.getElementById("gauge-" + g.id);
+          if (!el) return;
+          el.querySelectorAll("[data-f]").forEach(inp => {
+            const f = inp.dataset.f;
+            g[f] = inp.type === "checkbox" ? (inp.checked ? "O" : "") : inp.value.trim();
+          });
+          const cal = {};
+          let hasAny = false;
+          el.querySelectorAll("[data-c]").forEach(inp => {
+            const v = inp.value.trim();
+            if (v !== "") { cal[inp.dataset.c] = parseFloat(v); hasAny = true; }
+          });
+          const unit = el.querySelector('[data-f="unit"]').value.trim();
+          if (hasAny) {
+            cal.unit = unit;
+            CFG.calibration[g.id] = cal;
+          } else {
+            delete CFG.calibration[g.id];
+          }
+        });
+      });
+    });
+  });
+}
+
+async function saveAll() {
+  collect();
+  try {
+    const r = await api("/api/admin/save", { method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(CFG) });
+    const d = await r.json();
+    if (d.ok) toast("Saved ✓");
+    else toast("Save failed: " + (d.error || "?"));
+  } catch (e) { toast("Save failed"); }
+}
+
+async function backup() {
+  try {
+    const r = await api("/api/admin/backup");
+    const blob = await r.blob();
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "gauge_config_backup.json";
+    a.click();
+  } catch (e) { /* login shown */ }
+}
+
+document.getElementById("pw").addEventListener("keydown", e => { if (e.key === "Enter") doLogin(); });
+document.getElementById("ne-kind").onchange = e => {
+  document.getElementById("ne-pump-extra").style.display = e.target.value === "pumps" ? "block" : "none";
+};
+load();
+</script>
+</body>
+</html>
