@@ -15,9 +15,10 @@ import math
 import os
 import sys
 from datetime import datetime
+from functools import wraps
 from pathlib import Path
 
-from flask import Flask, jsonify, render_template, request, send_file
+from flask import Flask, jsonify, render_template, request, send_file, session
 
 BASE = Path(__file__).parent
 sys.path.insert(0, str(BASE))
@@ -28,6 +29,8 @@ import numpy as np
 
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 12 * 1024 * 1024  # 12 MB
+app.secret_key = os.environ.get("SECRET_KEY", "dev-secret-key")
+ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "ChangeMe123")
 
 EQUIPMENT = json.loads((BASE / "equipment.json").read_text())
 CALIB = json.loads((BASE / "calibration.json").read_text())
@@ -88,13 +91,57 @@ def health():
 @app.get("/")
 def index():
     items = []
+    boilers = []
     for sys in EQUIPMENT["systems"]:
         for grp in ("boilers", "pumps"):
             for dev in sys[grp]:
                 items.append({"system": sys["name"], "id": dev["id"],
                               "name": dev["name"],
                               "kind": "Boiler" if grp == "boilers" else "Pump"})
-    return render_template("index.html", items=items)
+                if grp == "boilers":
+                    boilers.append({"system": sys["name"], "id": dev["id"],
+                                    "name": dev["name"]})
+    return render_template("index.html", items=items, boilers=boilers)
+
+
+def _equip_payload(sys, dev, kind):
+    gauges = []
+    for g in dev.get("gauges", []):
+        cal = CALIB.get(g["id"], {})
+        gauges.append({
+            "id": g["id"], "name": g["name"],
+            "item": g.get("item", ""),
+            "unit": g.get("unit", "") or cal.get("unit", ""),
+            "calibrated": "angle_min" in cal,
+        })
+    return {"system": sys["name"], "id": dev["id"], "name": dev["name"],
+            "kind": kind, "gauges": gauges}
+
+
+@app.get("/inspect")
+def inspect_page():
+    return render_template("inspect.html")
+
+
+@app.get("/api/inspect")
+def api_inspect():
+    ids = [b.strip() for b in request.args.get("boilers", "").split(",")
+           if b.strip()]
+    items, seen = [], set()
+    for bid in ids:  # selected boilers first
+        sys, dev = find_equipment(bid)
+        if dev and bid not in seen and any(
+                d["id"] == bid for s in EQUIPMENT["systems"]
+                for d in s["boilers"]):
+            items.append(_equip_payload(sys, dev, "Boiler"))
+            seen.add(bid)
+    for bid in ids:  # then connected pumps (deduplicated)
+        for sys in EQUIPMENT["systems"]:
+            for p in sys["pumps"]:
+                if bid in p.get("boilers", []) and p["id"] not in seen:
+                    items.append(_equip_payload(sys, p, "Pump"))
+                    seen.add(p["id"])
+    return jsonify({"boilers": ids, "items": items})
 
 
 @app.get("/e/<equip_id>")
@@ -179,6 +226,102 @@ def api_export():
         return "No records yet", 404
     return send_file(LOG_CSV, as_attachment=True,
                      download_name="gauge_readings.csv")
+
+
+# ---------------- Admin (settings) ----------------
+
+def admin_required(fn):
+    @wraps(fn)
+    def wrapper(*args, **kwargs):
+        if not session.get("admin"):
+            return jsonify({"error": "login required"}), 401
+        return fn(*args, **kwargs)
+    return wrapper
+
+
+@app.get("/admin")
+def admin_page():
+    return render_template("admin.html")
+
+
+@app.post("/api/admin/login")
+def admin_login():
+    body = request.get_json(force=True, silent=True) or {}
+    if body.get("password") == ADMIN_PASSWORD:
+        session["admin"] = True
+        return jsonify({"ok": True})
+    return jsonify({"error": "Wrong password"}), 403
+
+
+@app.post("/api/admin/logout")
+def admin_logout():
+    session.pop("admin", None)
+    return jsonify({"ok": True})
+
+
+@app.get("/api/admin/config")
+@admin_required
+def admin_config():
+    return jsonify({"equipment": EQUIPMENT, "calibration": CALIB})
+
+
+def _validate_config(eq, cal):
+    if not isinstance(eq, dict) or not isinstance(eq.get("systems"), list):
+        return "bad equipment structure"
+    if not isinstance(cal, dict):
+        return "bad calibration structure"
+    seen = set()
+    for sys in eq["systems"]:
+        for grp in ("boilers", "pumps"):
+            for dev in sys.get(grp, []):
+                if not dev.get("id") or not dev.get("name"):
+                    return "equipment needs id and name"
+                for g in dev.get("gauges", []):
+                    if not g.get("id"):
+                        return "gauge needs id"
+                    if g["id"] in seen:
+                        return f'duplicate gauge id: {g["id"]}'
+                    seen.add(g["id"])
+    return None
+
+
+def _atomic_write(path: Path, text: str):
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp.write_text(text, encoding="utf-8")
+    os.replace(tmp, path)
+
+
+@app.post("/api/admin/save")
+@admin_required
+def admin_save():
+    global EQUIPMENT, CALIB
+    body = request.get_json(force=True, silent=True) or {}
+    eq, cal = body.get("equipment"), body.get("calibration")
+    err = _validate_config(eq, cal)
+    if err:
+        return jsonify({"error": err}), 400
+    eq_path = BASE / "equipment.json"
+    cal_path = BASE / "calibration.json"
+    if eq_path.exists():
+        _atomic_write(eq_path.with_suffix(".json.bak"),
+                      eq_path.read_text(encoding="utf-8"))
+    if cal_path.exists():
+        _atomic_write(cal_path.with_suffix(".json.bak"),
+                      cal_path.read_text(encoding="utf-8"))
+    _atomic_write(eq_path, json.dumps(eq, indent=2, ensure_ascii=False))
+    _atomic_write(cal_path, json.dumps(cal, indent=2, ensure_ascii=False))
+    EQUIPMENT, CALIB = eq, cal
+    return jsonify({"ok": True})
+
+
+@app.get("/api/admin/backup")
+@admin_required
+def admin_backup():
+    blob = json.dumps({"equipment": EQUIPMENT, "calibration": CALIB},
+                      indent=2, ensure_ascii=False).encode("utf-8")
+    return send_file(io.BytesIO(blob), as_attachment=True,
+                     download_name="gauge_config_backup.json",
+                     mimetype="application/json")
 
 
 if __name__ == "__main__":
