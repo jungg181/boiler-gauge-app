@@ -35,7 +35,7 @@
 <main>
   <div class="card">
     <h2>Start inspection</h2>
-    <p>Turn on the boilers and pumps running now. Pumps follow their boilers automatically — tap to adjust.</p>
+    <p>Turn on the boilers and pumps running now. One pump runs per boiler — tapping another pump switches to it.</p>
     <div class="grp-label">Boilers</div>
     <div class="toggles" id="boilers">
       {% for b in boilers %}
@@ -66,8 +66,13 @@
   </div>
 </main>
 <script>
-const P2B = {};
-{{ pumps|tojson }}.forEach(p => { P2B[p.id] = p.boilers || []; });
+const PUMPS = {{ pumps|tojson }};
+const P2B = {};  // pump -> boilers
+const B2P = {};  // boiler -> pumps
+PUMPS.forEach(p => {
+  P2B[p.id] = p.boilers || [];
+  (p.boilers || []).forEach(b => { (B2P[b] = B2P[b] || []).push(p.id); });
+});
 const boilerSel = new Set();
 const pumpSel = new Set();
 const startBtn = document.getElementById("startBtn");
@@ -87,21 +92,33 @@ document.querySelectorAll("#boilers button").forEach(b => b.onclick = () => {
     });
   } else {
     boilerSel.add(id); b.classList.add("on");
-    // auto-select its connected pumps
-    Object.keys(P2B).forEach(pid => {
-      if ((P2B[pid] || []).includes(id)) {
-        pumpSel.add(pid);
-        const pb = pumpBtn(pid); if (pb) pb.classList.add("on");
-      }
-    });
+    // one pump per boiler: auto-select the first if none selected yet
+    const grp = B2P[id] || [];
+    if (grp.length && !grp.some(pid => pumpSel.has(pid))) {
+      pumpSel.add(grp[0]);
+      const pb = pumpBtn(grp[0]); if (pb) pb.classList.add("on");
+    }
   }
   refresh();
 });
 
 document.querySelectorAll("#pumps button").forEach(b => b.onclick = () => {
   const id = b.dataset.id;
-  if (pumpSel.has(id)) { pumpSel.delete(id); b.classList.remove("on"); }
-  else { pumpSel.add(id); b.classList.add("on"); }
+  if (pumpSel.has(id)) {
+    pumpSel.delete(id); b.classList.remove("on");
+  } else {
+    pumpSel.add(id); b.classList.add("on");
+    // one pump per boiler: tapping another pump switches to it
+    (P2B[id] || []).forEach(boiler => {
+      if (!boilerSel.has(boiler)) return;
+      (B2P[boiler] || []).forEach(other => {
+        if (other !== id && pumpSel.has(other)) {
+          pumpSel.delete(other);
+          const ob = pumpBtn(other); if (ob) ob.classList.remove("on");
+        }
+      });
+    });
+  }
   refresh();
 });
 
