@@ -156,6 +156,7 @@ function gaugeHtml(sysName, grp, dev, g) {
       <div><label>Value at max</label><input type="number" step="any" data-c="value_max" value="${num(cal.value_max)}"></div>
     </div>
     <button class="btn btn-del" onclick="delGauge('${esc(sysName)}','${grp}','${esc(dev.id)}','${esc(g.id)}')">Delete gauge</button>
+    <button class="btn btn-sec" onclick="gaugeQR('${esc(dev.id)}','${esc(g.id)}','${esc(g.name)}')">📷 QR code for this gauge</button>
   </div>`;
 }
 
@@ -298,6 +299,16 @@ async function backup() {
     a.download = "gauge_config_backup.json";
     a.click();
   } catch (e) { /* login shown */ }
+}
+
+function gaugeQR(devId, gid, gname) {
+  const url = location.origin + "/e/" + encodeURIComponent(devId) + "?gauge=" + encodeURIComponent(gid);
+  const a = document.createElement("a");
+  a.href = "/api/qr?text=" + encodeURIComponent(url);
+  a.download = "QR_" + (gname || gid).replace(/[^\w\-]+/g, "_") + ".png";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
 }
 
 document.getElementById("pw").addEventListener("keydown", e => { if (e.key === "Enter") doLogin(); });

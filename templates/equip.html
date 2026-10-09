@@ -58,6 +58,7 @@
 
 <script>
 const EQUIP_ID = "{{ equip_id }}";
+const GAUGE_PARAM = new URLSearchParams(location.search).get("gauge");
 let gauges = [];
 let state = "run";
 let doneSet = new Set(JSON.parse(localStorage.getItem("done_" + EQUIP_ID + "_" + state) || "[]"));
@@ -78,9 +79,20 @@ async function load() {
   document.getElementById("subtitle").textContent = d.system + " · " + d.id;
   gauges = d.gauges;
   render();
+  if (GAUGE_PARAM) {
+    const card = document.getElementById("card-" + GAUGE_PARAM);
+    if (card) {
+      setTimeout(() => {
+        card.scrollIntoView({ behavior: "smooth", block: "center" });
+        card.style.outline = "3px solid #2e7d32";
+        setTimeout(() => card.style.outline = "", 4000);
+      }, 300);
+    }
+  }
 }
 
 function visibleGauges() {
+  if (GAUGE_PARAM) return gauges;  // deep link: show all gauges
   return gauges.filter(g => state === "run" ? g.check_running === "O" : g.check_stopped === "O");
 }
 
