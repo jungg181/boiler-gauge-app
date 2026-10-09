@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""보일러 게이지 점검 서버 (v1).
+"""Boiler gauge inspection server (v1).
 
-- GET  /e/<설비ID>        : 설비 점검 페이지 (모바일)
-- GET  /api/equipment/<id>: 설비 정보 + 게이지 목록 JSON
-- POST /api/read          : 게이지 사진 업로드 → 바늘 자동 판독 {angle, value, unit}
-- POST /api/log           : 측정값 저장
-- GET  /api/export        : 측정 기록 CSV 다운로드
-- GET  /health            : 상태 확인
+- GET  /e/<equip_id>        : equipment inspection page (mobile)
+- GET  /api/equipment/<id> : equipment info + gauge list JSON
+- POST /api/read           : gauge photo upload → automatic needle reading {angle, value, unit}
+- POST /api/log            : save measurement
+- GET  /api/export         : download measurement log CSV
+- GET  /health             : status check
 """
 import csv
 import io
@@ -53,7 +53,7 @@ def read_gauge_bytes(data: bytes, gauge_id: str):
     arr = np.frombuffer(data, np.uint8)
     img = cv2.imdecode(arr, cv2.IMREAD_COLOR)
     if img is None:
-        raise ValueError("사진을 읽을 수 없습니다")
+        raise ValueError("Could not read the photo")
     # 큰 사진은 축소 (처리 속도 향상 — 판독 정확도에 영향 없음)
     h0, w0 = img.shape[:2]
     if max(h0, w0) > 1280:
@@ -93,7 +93,7 @@ def index():
             for dev in sys[grp]:
                 items.append({"system": sys["name"], "id": dev["id"],
                               "name": dev["name"],
-                              "kind": "보일러" if grp == "boilers" else "펌프"})
+                              "kind": "Boiler" if grp == "boilers" else "Pump"})
     return render_template("index.html", items=items)
 
 
@@ -101,7 +101,7 @@ def index():
 def equipment_page(equip_id):
     sys, dev = find_equipment(equip_id)
     if dev is None:
-        return f"설비 {equip_id}를 찾을 수 없습니다", 404
+        return f"Equipment {equip_id} not found", 404
     return render_template("equip.html", sys=sys, dev=dev, equip_id=equip_id)
 
 
@@ -129,7 +129,7 @@ def api_read():
     gauge_id = request.form.get("gauge_id", "")
     photo = request.files.get("photo")
     if not photo:
-        return jsonify({"error": "사진이 없습니다"}), 400
+        return jsonify({"error": "No photo uploaded"}), 400
     data = photo.read()
     # 원본 저장 (이력용)
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -176,9 +176,9 @@ def api_log():
 @app.get("/api/export")
 def api_export():
     if not LOG_CSV.exists():
-        return "기록이 없습니다", 404
+        return "No records yet", 404
     return send_file(LOG_CSV, as_attachment=True,
-                     download_name="게이지_측정기록.csv")
+                     download_name="gauge_readings.csv")
 
 
 if __name__ == "__main__":
