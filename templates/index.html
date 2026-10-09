@@ -13,10 +13,13 @@
   .card { background: #fff; border-radius: 12px; padding: 14px; margin-bottom: 12px; box-shadow: 0 1px 4px rgba(0,0,0,.08); }
   .card h2 { margin: 0 0 4px; font-size: 17px; }
   .card p { margin: 0 0 10px; font-size: 13px; color: #666; }
-  .boilers { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
-  .boilers button { flex: 1 1 28%; padding: 14px 6px; font-size: 16px; font-weight: bold; border: 2px solid #1F4E78; border-radius: 10px; background: #fff; color: #1F4E78; cursor: pointer; }
-  .boilers button.on { background: #1F4E78; color: #fff; }
-  .btn { display: block; width: 100%; padding: 14px; font-size: 17px; font-weight: bold; border: none; border-radius: 10px; cursor: pointer; }
+  .grp-label { font-size: 13px; font-weight: bold; color: #1F4E78; margin: 10px 0 6px; }
+  .toggles { display: flex; flex-wrap: wrap; gap: 8px; }
+  .toggles button { flex: 1 1 28%; padding: 13px 6px; font-size: 16px; font-weight: bold; border: 2px solid #1F4E78; border-radius: 10px; background: #fff; color: #1F4E78; cursor: pointer; }
+  .toggles button.on { background: #1F4E78; color: #fff; }
+  .toggles.pump button { border-color: #2e7d32; color: #2e7d32; }
+  .toggles.pump button.on { background: #2e7d32; color: #fff; }
+  .btn { display: block; width: 100%; padding: 14px; font-size: 17px; font-weight: bold; border: none; border-radius: 10px; cursor: pointer; margin-top: 12px; }
   .btn-go { background: #2e7d32; color: #fff; }
   .btn:disabled { opacity: .4; }
   .equip-link { display: block; background: #fff; border-radius: 12px; padding: 16px; margin-bottom: 10px; text-decoration: none; color: #222; box-shadow: 0 1px 4px rgba(0,0,0,.08); }
@@ -32,13 +35,20 @@
 <main>
   <div class="card">
     <h2>Start inspection</h2>
-    <p>Select the boilers running now — their pumps and gauges will be listed for photo check.</p>
-    <div class="boilers" id="boilers">
+    <p>Turn on the boilers and pumps running now. Pumps follow their boilers automatically — tap to adjust.</p>
+    <div class="grp-label">Boilers</div>
+    <div class="toggles" id="boilers">
       {% for b in boilers %}
       <button data-id="{{ b.id }}">{{ b.id }}</button>
       {% endfor %}
     </div>
-    <button class="btn btn-go" id="startBtn" disabled>Select boilers first</button>
+    <div class="grp-label">Pumps</div>
+    <div class="toggles pump" id="pumps">
+      {% for p in pumps %}
+      <button data-id="{{ p.id }}">{{ p.id }}</button>
+      {% endfor %}
+    </div>
+    <button class="btn btn-go" id="startBtn" disabled>Select equipment first</button>
   </div>
 
   <div class="sec">All equipment</div>
@@ -56,18 +66,54 @@
   </div>
 </main>
 <script>
-const sel = new Set();
-const btns = document.querySelectorAll("#boilers button");
+const P2B = {};
+{{ pumps|tojson }}.forEach(p => { P2B[p.id] = p.boilers || []; });
+const boilerSel = new Set();
+const pumpSel = new Set();
 const startBtn = document.getElementById("startBtn");
-btns.forEach(b => b.onclick = () => {
+
+function pumpBtn(pid) { return document.querySelector(`#pumps button[data-id="${pid}"]`); }
+
+document.querySelectorAll("#boilers button").forEach(b => b.onclick = () => {
   const id = b.dataset.id;
-  if (sel.has(id)) { sel.delete(id); b.classList.remove("on"); }
-  else { sel.add(id); b.classList.add("on"); }
-  startBtn.disabled = sel.size === 0;
-  startBtn.textContent = sel.size === 0 ? "Select boilers first" : `Start inspection (${sel.size} boiler${sel.size > 1 ? "s" : ""})`;
+  if (boilerSel.has(id)) {
+    boilerSel.delete(id); b.classList.remove("on");
+    // turn off pumps left without any selected boiler
+    [...pumpSel].forEach(pid => {
+      if ((P2B[pid] || []).includes(id) && !(P2B[pid] || []).some(x => boilerSel.has(x))) {
+        pumpSel.delete(pid);
+        const pb = pumpBtn(pid); if (pb) pb.classList.remove("on");
+      }
+    });
+  } else {
+    boilerSel.add(id); b.classList.add("on");
+    // auto-select its connected pumps
+    Object.keys(P2B).forEach(pid => {
+      if ((P2B[pid] || []).includes(id)) {
+        pumpSel.add(pid);
+        const pb = pumpBtn(pid); if (pb) pb.classList.add("on");
+      }
+    });
+  }
+  refresh();
 });
+
+document.querySelectorAll("#pumps button").forEach(b => b.onclick = () => {
+  const id = b.dataset.id;
+  if (pumpSel.has(id)) { pumpSel.delete(id); b.classList.remove("on"); }
+  else { pumpSel.add(id); b.classList.add("on"); }
+  refresh();
+});
+
+function refresh() {
+  const n = boilerSel.size + pumpSel.size;
+  startBtn.disabled = n === 0;
+  startBtn.textContent = n === 0 ? "Select equipment first"
+    : `Start inspection (${boilerSel.size} boiler${boilerSel.size === 1 ? "" : "s"}, ${pumpSel.size} pump${pumpSel.size === 1 ? "" : "s"})`;
+}
 startBtn.onclick = () => {
-  if (sel.size) location.href = "/inspect?boilers=" + [...sel].join(",");
+  const q = "boilers=" + [...boilerSel].join(",") + "&pumps=" + [...pumpSel].join(",");
+  location.href = "/inspect?" + q;
 };
 </script>
 </body>

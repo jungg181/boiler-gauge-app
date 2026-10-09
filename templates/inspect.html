@@ -57,6 +57,8 @@
 <script>
 const params = new URLSearchParams(location.search);
 const BOILERS = (params.get("boilers") || "").split(",").filter(Boolean);
+const PUMPS = (params.get("pumps") || "").split(",").filter(Boolean);
+const HAS_PUMPS_PARAM = params.has("pumps");
 const TODAY = new Date().toISOString().slice(0, 10);
 const DONE_KEY = "done_inspect_" + TODAY;
 let doneSet = new Set(JSON.parse(localStorage.getItem(DONE_KEY) || "[]"));
@@ -81,9 +83,11 @@ function updateProg() {
 }
 
 async function load() {
-  if (!BOILERS.length) { location.href = "/"; return; }
-  document.getElementById("subtitle").textContent = "Running: " + BOILERS.join(", ");
-  const r = await fetch("/api/inspect?boilers=" + BOILERS.join(","));
+  if (!BOILERS.length && !PUMPS.length) { location.href = "/"; return; }
+  document.getElementById("subtitle").textContent =
+    "Boilers: " + (BOILERS.join(", ") || "—") + " · Pumps: " + (PUMPS.join(", ") || "—");
+  const q = "boilers=" + BOILERS.join(",") + (HAS_PUMPS_PARAM ? "&pumps=" + PUMPS.join(",") : "");
+  const r = await fetch("/api/inspect?" + q);
   const d = await r.json();
   items = d.items;
   const box = document.getElementById("list");
