@@ -14,6 +14,8 @@ import json
 import math
 import os
 import sys
+import threading
+import urllib.request
 from datetime import datetime
 from functools import wraps
 from pathlib import Path
@@ -31,6 +33,39 @@ app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 12 * 1024 * 1024  # 12 MB
 app.secret_key = os.environ.get("SECRET_KEY", "dev-secret-key")
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "ChangeMe123")
+SHEETS_URL = os.environ.get("SHEETS_URL", "")  # Google Apps Script web app URL
+
+
+def sheets_post(payload, timeout=12):
+    """Best-effort POST to the Google Sheets webhook. Never raises."""
+    if not SHEETS_URL:
+        return None
+    try:
+        req = urllib.request.Request(
+            SHEETS_URL, data=json.dumps(payload).encode("utf-8"),
+            headers={"Content-Type": "application/json"})
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            return json.loads(resp.read().decode("utf-8"))
+    except Exception as e:  # noqa: BLE001
+        print(f"sheets_post failed: {e}", flush=True)
+        return None
+
+
+def sheets_get_config(timeout=15):
+    """Fetch the persisted settings from Google Sheets. Returns dict or None."""
+    if not SHEETS_URL:
+        return None
+    try:
+        with urllib.request.urlopen(SHEETS_URL + "?action=getConfig",
+                                    timeout=timeout) as resp:
+            return json.loads(resp.read().decode("utf-8")).get("config")
+    except Exception as e:  # noqa: BLE001
+        print(f"sheets_get_config failed: {e}", flush=True)
+        return None
+
+
+def sheets_post_async(payload):
+    threading.Thread(target=sheets_post, args=(payload,), daemon=True).start()
 
 EQUIPMENT = json.loads((BASE / "equipment.json").read_text())
 CALIB = json.loads((BASE / "calibration.json").read_text())
@@ -251,6 +286,8 @@ def api_log():
         if new_file:
             w.writeheader()
         w.writerow(row)
+    # persist to Google Sheets (best-effort, background)
+    sheets_post_async({"action": "reading", "reading": row})
     return jsonify({"ok": True})
 
 
@@ -345,6 +382,9 @@ def admin_save():
     _atomic_write(eq_path, json.dumps(eq, indent=2, ensure_ascii=False))
     _atomic_write(cal_path, json.dumps(cal, indent=2, ensure_ascii=False))
     EQUIPMENT, CALIB = eq, cal
+    # persist settings to Google Sheets (best-effort, background)
+    sheets_post_async({"action": "saveConfig",
+                       "config": {"equipment": eq, "calibration": cal}})
     return jsonify({"ok": True})
 
 
@@ -356,6 +396,23 @@ def admin_backup():
     return send_file(io.BytesIO(blob), as_attachment=True,
                      download_name="gauge_config_backup.json",
                      mimetype="application/json")
+
+
+# Restore settings from Google Sheets on startup (survives server wipes).
+# Local disk files remain the fallback when Sheets is unreachable/empty.
+if SHEETS_URL:
+    _remote = sheets_get_config()
+    if isinstance(_remote, dict) and isinstance(_remote.get("equipment"), dict):
+        EQUIPMENT = _remote["equipment"]
+        CALIB = _remote.get("calibration", {}) or {}
+        try:
+            _atomic_write(BASE / "equipment.json",
+                          json.dumps(EQUIPMENT, indent=2, ensure_ascii=False))
+            _atomic_write(BASE / "calibration.json",
+                          json.dumps(CALIB, indent=2, ensure_ascii=False))
+            print("config restored from Google Sheets", flush=True)
+        except Exception as e:  # noqa: BLE001
+            print(f"config cache write failed: {e}", flush=True)
 
 
 if __name__ == "__main__":
