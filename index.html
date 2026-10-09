@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>보일러 게이지 점검</title>
+<style>
+  * { box-sizing: border-box; }
+  body { font-family: -apple-system, "Malgun Gothic", sans-serif; margin: 0; background: #f2f4f7; color: #222; }
+  header { background: #1F4E78; color: #fff; padding: 16px; }
+  header h1 { margin: 0; font-size: 20px; }
+  main { padding: 12px; max-width: 640px; margin: 0 auto; }
+  .equip-link { display: block; background: #fff; border-radius: 12px; padding: 16px; margin-bottom: 10px; text-decoration: none; color: #222; box-shadow: 0 1px 4px rgba(0,0,0,.08); }
+  .equip-link b { font-size: 17px; }
+  .equip-link span { display: block; font-size: 13px; color: #666; margin-top: 4px; }
+  .sec { font-size: 14px; font-weight: bold; color: #1F4E78; margin: 16px 4px 8px; }
+  .foot { text-align: center; margin: 20px 0; }
+  .foot a { color: #1F4E78; font-size: 15px; }
+</style>
+</head>
+<body>
+<header><h1>🔧 보일러 게이지 점검</h1></header>
+<main>
+  <div class="sec">Cathode</div>
+  {% for it in items if it.system == "Cathode" %}
+  <a class="equip-link" href="/e/{{ it.id }}"><b>{{ it.name }}</b><span>{{ it.kind }} · {{ it.id }}</span></a>
+  {% endfor %}
+  <div class="sec">Anode</div>
+  {% for it in items if it.system == "Anode" %}
+  <a class="equip-link" href="/e/{{ it.id }}"><b>{{ it.name }}</b><span>{{ it.kind }} · {{ it.id }}</span></a>
+  {% endfor %}
+  <div class="foot"><a href="/api/export">📥 측정 기록 CSV 내려받기</a></div>
+</main>
+</body>
+</html>

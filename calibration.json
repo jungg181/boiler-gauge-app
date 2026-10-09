@@ -1,0 +1,1 @@
+{"B-01-G1":{"angle_max":45,"angle_min":135,"unit":"psi","value_max":200,"value_min":0},"P-01-P1":{"angle_max":45,"angle_min":135,"unit":"psi","value_max":150,"value_min":0},"_comment":"예시 캘리브레이션. 실측한 게이지마다 angle_min/angle_max를 실제로 맞추세요. 값(psi 등)은 나중에 구글 시트와 함께 정리됩니다."}

@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>보일러 게이지 점검</title>
+<style>
+  * { box-sizing: border-box; }
+  body { font-family: -apple-system, "Malgun Gothic", sans-serif; margin: 0; background: #f2f4f7; color: #222; }
+  header { background: #1F4E78; color: #fff; padding: 16px; position: sticky; top: 0; z-index: 10; }
+  header h1 { margin: 0; font-size: 20px; }
+  header p { margin: 4px 0 0; font-size: 13px; opacity: .85; }
+  main { padding: 12px; max-width: 640px; margin: 0 auto; }
+  .card { background: #fff; border-radius: 12px; padding: 14px; margin-bottom: 12px; box-shadow: 0 1px 4px rgba(0,0,0,.08); }
+  .card.done { border: 2px solid #2e7d32; }
+  .gname { font-size: 17px; font-weight: bold; }
+  .gmeta { font-size: 13px; color: #666; margin: 4px 0 10px; }
+  .btn { display: block; width: 100%; padding: 14px; font-size: 17px; border: none; border-radius: 10px; margin-top: 8px; cursor: pointer; }
+  .btn-cam { background: #1F4E78; color: #fff; }
+  .btn-ok { background: #2e7d32; color: #fff; }
+  .btn-edit { background: #e0e0e0; color: #222; }
+  .btn:disabled { opacity: .5; }
+  .toggle { display: flex; gap: 8px; margin-bottom: 12px; }
+  .toggle button { flex: 1; padding: 14px; font-size: 17px; font-weight: bold; border: 2px solid #1F4E78; border-radius: 10px; background: #fff; color: #1F4E78; cursor: pointer; }
+  .toggle button.on { background: #1F4E78; color: #fff; }
+  .val { font-size: 34px; font-weight: bold; color: #1F4E78; margin: 8px 0; }
+  .thumb { width: 100%; border-radius: 8px; margin-top: 8px; }
+  .row { display: flex; gap: 8px; }
+  .row .btn { margin-top: 8px; }
+  input[type=text], input[type=number] { width: 100%; padding: 12px; font-size: 17px; border: 1px solid #bbb; border-radius: 8px; margin-top: 8px; }
+  .prog { text-align: center; font-size: 14px; color: #555; margin: 4px 0 12px; }
+  .warn { background: #fff8e1; border: 1px solid #f0c36d; border-radius: 8px; padding: 10px; font-size: 13px; margin-top: 8px; }
+  .ok-badge { color: #2e7d32; font-weight: bold; }
+  #toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); background: #222; color: #fff; padding: 12px 20px; border-radius: 24px; display: none; font-size: 15px; }
+  .equip-link { display: block; background: #fff; border-radius: 12px; padding: 16px; margin-bottom: 10px; text-decoration: none; color: #222; box-shadow: 0 1px 4px rgba(0,0,0,.08); }
+  .equip-link b { font-size: 17px; }
+  .equip-link span { display: block; font-size: 13px; color: #666; margin-top: 4px; }
+</style>
+</head>
+<body>
+<header>
+  <h1 id="title">설비</h1>
+  <p id="subtitle"></p>
+</header>
+<main>
+  <div class="card">
+    <div style="font-size:14px;color:#555;margin-bottom:4px">작업자 이름</div>
+    <input type="text" id="worker" placeholder="예: 김철수" style="margin-top:0">
+  </div>
+  <div class="toggle">
+    <button id="btnRun" class="on">가동중</button>
+    <button id="btnStop">정지중</button>
+  </div>
+  <div class="prog" id="prog"></div>
+  <div id="gauges"></div>
+</main>
+<div id="toast"></div>
+
+<script>
+const EQUIP_ID = "{{ equip_id }}";
+let gauges = [];
+let state = "run";
+let doneSet = new Set(JSON.parse(localStorage.getItem("done_" + EQUIP_ID + "_" + state) || "[]"));
+
+worker.value = localStorage.getItem("worker") || "";
+worker.onchange = () => localStorage.setItem("worker", worker.value);
+
+function toast(msg) {
+  const t = document.getElementById("toast");
+  t.textContent = msg; t.style.display = "block";
+  setTimeout(() => t.style.display = "none", 2000);
+}
+
+async function load() {
+  const r = await fetch("/api/equipment/" + EQUIP_ID);
+  const d = await r.json();
+  document.getElementById("title").textContent = d.name;
+  document.getElementById("subtitle").textContent = d.system + " · " + d.id;
+  gauges = d.gauges;
+  render();
+}
+
+function visibleGauges() {
+  return gauges.filter(g => state === "run" ? g.check_running === "O" : g.check_stopped === "O");
+}
+
+function render() {
+  const list = visibleGauges();
+  const box = document.getElementById("gauges");
+  const done = list.filter(g => doneSet.has(g.id)).length;
+  document.getElementById("prog").textContent = list.length ? `${done} / ${list.length} 완료` : "이 상태에서는 확인할 게이지가 없습니다";
+  box.innerHTML = "";
+  list.forEach(g => {
+    const card = document.createElement("div");
+    card.className = "card" + (doneSet.has(g.id) ? " done" : "");
+    card.id = "card-" + g.id;
+    card.innerHTML = `
+      <div class="gname">${doneSet.has(g.id) ? '<span class="ok-badge">✓</span> ' : ""}${esc(g.name)}</div>
+      <div class="gmeta">${esc(g.item || "측정 항목 미등록")} ${g.unit ? "· " + esc(g.unit) : ""}${g.calibrated ? "" : ' · <span style="color:#b26a00">캘리브레이션 필요</span>'}</div>
+      <div class="res" style="display:none"></div>
+      <input type="file" accept="image/*" capture="environment" style="display:none" id="file-${g.id}">
+      <button class="btn btn-cam" onclick="shoot('${g.id}')">📷 촬영하기</button>`;
+    box.appendChild(card);
+    card.querySelector("input").addEventListener("change", ev => onPhoto(g, ev.target.files[0]));
+  });
+  btnRun.classList.toggle("on", state === "run");
+  btnStop.classList.toggle("on", state === "stop");
+}
+
+function esc(s) { return String(s == null ? "" : s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+
+function shoot(gid) { document.getElementById("file-" + gid).click(); }
+
+async function onPhoto(g, file) {
+  if (!file) return;
+  const card = document.getElementById("card-" + g.id);
+  const res = card.querySelector(".res");
+  res.style.display = "block";
+  res.innerHTML = `<img class="thumb" id="thumb-${g.id}"><div style="margin-top:8px;color:#666">판독 중...</div>`;
+  document.getElementById("thumb-" + g.id).src = URL.createObjectURL(file);
+
+  const fd = new FormData();
+  fd.append("gauge_id", g.id);
+  fd.append("photo", file);
+  let data;
+  try {
+    const r = await fetch("/api/read", { method: "POST", body: fd });
+    data = await r.json();
+  } catch (e) { data = { error: "서버 연결 실패" }; }
+
+  if (data.error) {
+    res.innerHTML += `<div class="warn">판독 실패: ${esc(data.error)}<br>아래에 직접 입력해주세요.</div>` + manualHtml(g, "");
+    return;
+  }
+  window["_last_" + g.id] = data;
+  let html = "";
+  if (data.value == null) {
+    html = `<div class="warn">자동 판독: 바늘 각도 ${data.angle_deg}° (캘리브레이션 미등록 — 값을 직접 입력해주세요)</div>` + manualHtml(g, "");
+  } else {
+    html = `<div class="val">${data.value} <span style="font-size:18px">${esc(data.unit || "")}</span></div>
+      <div style="font-size:12px;color:#888">바늘 각도 ${data.angle_deg}° · 자동 판독</div>
+      <div class="row">
+        <button class="btn btn-ok" onclick="confirmReading('${g.id}', false)">✓ 확인</button>
+        <button class="btn btn-edit" onclick="showManual('${g.id}')">직접 입력</button>
+      </div>
+      <div class="manual" style="display:none">${manualHtml(g, data.value)}</div>`;
+  }
+  res.innerHTML = `<img class="thumb" src="${document.getElementById("thumb-" + g.id).src}">` + html;
+}
+
+function manualHtml(g, preset) {
+  return `<input type="number" step="any" id="manual-${g.id}" placeholder="측정값 입력" value="${preset == null ? "" : preset}">
+    <button class="btn btn-ok" onclick="confirmReading('${g.id}', true)">✓ 저장</button>`;
+}
+function showManual(gid) {
+  const m = document.querySelector("#card-" + gid + " .manual");
+  if (m) m.style.display = "block";
+}
+
+async function confirmReading(gid, manual) {
+  const g = gauges.find(x => x.id === gid);
+  const last = window["_last_" + gid] || {};
+  let value = last.value;
+  if (manual) {
+    value = document.getElementById("manual-" + gid).value;
+    if (value === "" || value == null) { toast("값을 입력해주세요"); return; }
+  }
+  const body = {
+    equip_id: EQUIP_ID, gauge_id: gid, value: value,
+    unit: g.unit || last.unit || "",
+    angle_deg: last.angle_deg || "", state: state === "run" ? "가동중" : "정지중",
+    worker: worker.value || "", photo: last.photo || "", manual: manual
+  };
+  try {
+    await fetch("/api/log", { method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body) });
+  } catch (e) { toast("저장 실패 — 다시 시도해주세요"); return; }
+  doneSet.add(gid);
+  localStorage.setItem("done_" + EQUIP_ID + "_" + state, JSON.stringify([...doneSet]));
+  toast("저장됐습니다 ✓");
+  render();
+}
+
+btnRun.onclick = () => { state = "run"; doneSet = new Set(JSON.parse(localStorage.getItem("done_" + EQUIP_ID + "_" + state) || "[]")); render(); };
+btnStop.onclick = () => { state = "stop"; doneSet = new Set(JSON.parse(localStorage.getItem("done_" + EQUIP_ID + "_" + state) || "[]")); render(); };
+
+load();
+</script>
+</body>
+</html>
