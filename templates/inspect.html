@@ -53,6 +53,13 @@
   <div id="list"></div>
 </main>
 <div id="toast"></div>
+<div id="camOverlay" style="display:none;position:fixed;inset:0;background:#000;z-index:100">
+  <video id="camVideo" autoplay playsinline style="width:100%;height:calc(100% - 96px);object-fit:cover;background:#000"></video>
+  <div style="display:flex;gap:8px;padding:16px">
+    <button class="btn" style="background:#555;color:#fff;margin-top:0" onclick="closeCam()">Cancel</button>
+    <button class="btn" style="background:#2e7d32;color:#fff;margin-top:0" onclick="capturePhoto()">📷 Capture</button>
+  </div>
+</div>
 
 <script>
 const params = new URLSearchParams(location.search);
@@ -106,7 +113,7 @@ async function load() {
         <div class="gname">${doneSet.has(g.id) ? '<span class="ok-badge">✓</span> ' : ""}${esc(g.name)}</div>
         <div class="gmeta">${esc(it.name)} · ${esc(g.item || "Item not registered")} ${g.unit ? "· " + esc(g.unit) : ""}${g.calibrated ? "" : ' · <span style="color:#b26a00">Calibration needed</span>'}</div>
         <div class="res" style="display:none"></div>
-        <input type="file" accept="image/*" capture="environment" style="display:none" id="file-${g.id}">
+        <input type="file" accept="image/*" style="display:none" id="file-${g.id}">
         <button class="btn btn-cam" onclick="shoot('${g.id}')">📷 Take photo</button>`;
       box.appendChild(card);
       card.querySelector("input").addEventListener("change", ev => onPhoto(g.id, ev.target.files[0]));
@@ -115,7 +122,47 @@ async function load() {
   updateProg();
 }
 
-function shoot(gid) { document.getElementById("file-" + gid).click(); }
+function shoot(gid) {
+  // In-page camera: small memory footprint, no heavy camera app.
+  openCam(gid);
+}
+
+let camStream = null, camGid = null;
+async function openCam(gid) {
+  camGid = gid;
+  try {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) throw new Error("no camera api");
+    camStream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: { ideal: "environment" }, width: { ideal: 1280 }, height: { ideal: 960 } },
+      audio: false
+    });
+  } catch (e) {
+    document.getElementById("file-" + gid).click();  // fallback: file picker
+    return;
+  }
+  const v = document.getElementById("camVideo");
+  v.srcObject = camStream;
+  try { await v.play(); } catch (e) {}
+  document.getElementById("camOverlay").style.display = "block";
+}
+function closeCam() {
+  document.getElementById("camOverlay").style.display = "none";
+  const v = document.getElementById("camVideo");
+  if (v) v.srcObject = null;
+  if (camStream) { camStream.getTracks().forEach(t => t.stop()); camStream = null; }
+}
+async function capturePhoto() {
+  const v = document.getElementById("camVideo");
+  const w = v.videoWidth || 1280, h = v.videoHeight || 960;
+  const c = document.createElement("canvas");
+  c.width = w; c.height = h;
+  c.getContext("2d").drawImage(v, 0, 0, w, h);
+  const blob = await new Promise(r => c.toBlob(r, "image/jpeg", 0.85));
+  const gid = camGid;
+  closeCam();
+  if (blob) onPhoto(gid, blob);
+  else toast("Capture failed — try again");
+}
 
 async function shrinkPhoto(file) {
   try {
