@@ -120,6 +120,19 @@ async function load() {
 
 function calOf(gid) { return CFG.calibration[gid] || {}; }
 
+const UNITS = ["MPa", "psi", "°F", "°C", "kPa", "bar", "kg/h", "mmH2O", "%"];
+const UNIT_LABELS = { "°F": "°F (화씨)", "°C": "°C (섭씨)" };
+function unitOptions(selected) {
+  let h = `<option value="">—</option>`;
+  UNITS.forEach(u => {
+    h += `<option value="${u}"${u === selected ? " selected" : ""}>${UNIT_LABELS[u] || u}</option>`;
+  });
+  if (selected && !UNITS.includes(selected)) {
+    h += `<option value="${esc(selected)}" selected>${esc(selected)}</option>`;
+  }
+  return h;
+}
+
 function gaugeHtml(sysName, grp, dev, g) {
   const cal = calOf(g.id);
   const num = (v) => v == null ? "" : v;
@@ -129,7 +142,7 @@ function gaugeHtml(sysName, grp, dev, g) {
     <input type="text" data-f="name" value="${esc(g.name)}">
     <div class="grid2">
       <div><label>Item (e.g. Discharge pressure)</label><input type="text" data-f="item" value="${esc(g.item || "")}"></div>
-      <div><label>Unit (e.g. psi)</label><input type="text" data-f="unit" value="${esc(g.unit || "")}"></div>
+      <div><label>Unit</label><select data-f="unit">${unitOptions(g.unit || "")}</select></div>
     </div>
     <div class="chk">
       <label><input type="checkbox" data-f="check_running" ${g.check_running === "O" ? "checked" : ""}> Check when running</label>
