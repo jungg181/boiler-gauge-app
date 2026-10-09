@@ -110,6 +110,7 @@ def health():
 def index():
     items = []
     boilers = []
+    pumps = []
     for sys in EQUIPMENT["systems"]:
         for grp in ("boilers", "pumps"):
             for dev in sys[grp]:
@@ -119,7 +120,12 @@ def index():
                 if grp == "boilers":
                     boilers.append({"system": sys["name"], "id": dev["id"],
                                     "name": dev["name"]})
-    return render_template("index.html", items=items, boilers=boilers)
+                else:
+                    pumps.append({"system": sys["name"], "id": dev["id"],
+                                  "name": dev["name"],
+                                  "boilers": dev.get("boilers", [])})
+    return render_template("index.html", items=items, boilers=boilers,
+                           pumps=pumps)
 
 
 def _equip_payload(sys, dev, kind):
@@ -145,20 +151,30 @@ def inspect_page():
 def api_inspect():
     ids = [b.strip() for b in request.args.get("boilers", "").split(",")
            if b.strip()]
+    pump_id_set = {p["id"] for s in EQUIPMENT["systems"] for p in s["pumps"]}
     items, seen = [], set()
     for bid in ids:  # selected boilers first
         sys, dev = find_equipment(bid)
-        if dev and bid not in seen and any(
-                d["id"] == bid for s in EQUIPMENT["systems"]
-                for d in s["boilers"]):
+        if dev and bid not in seen and bid not in pump_id_set:
             items.append(_equip_payload(sys, dev, "Boiler"))
             seen.add(bid)
-    for bid in ids:  # then connected pumps (deduplicated)
-        for sys in EQUIPMENT["systems"]:
-            for p in sys["pumps"]:
-                if bid in p.get("boilers", []) and p["id"] not in seen:
-                    items.append(_equip_payload(sys, p, "Pump"))
-                    seen.add(p["id"])
+    if "pumps" in request.args:
+        # explicit pump selection from the home screen
+        pump_ids = [p.strip() for p in request.args.get("pumps", "").split(",")
+                    if p.strip()]
+        for pid in pump_ids:
+            if pid in pump_id_set and pid not in seen:
+                sys, dev = find_equipment(pid)
+                items.append(_equip_payload(sys, dev, "Pump"))
+                seen.add(pid)
+    else:
+        # auto: pumps connected to the selected boilers (deduplicated)
+        for bid in ids:
+            for sys in EQUIPMENT["systems"]:
+                for p in sys["pumps"]:
+                    if bid in p.get("boilers", []) and p["id"] not in seen:
+                        items.append(_equip_payload(sys, p, "Pump"))
+                        seen.add(p["id"])
     return jsonify({"boilers": ids, "items": items})
 
 
