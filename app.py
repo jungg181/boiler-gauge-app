@@ -54,6 +54,12 @@ def read_gauge_bytes(data: bytes, gauge_id: str):
     img = cv2.imdecode(arr, cv2.IMREAD_COLOR)
     if img is None:
         raise ValueError("사진을 읽을 수 없습니다")
+    # 큰 사진은 축소 (처리 속도 향상 — 판독 정확도에 영향 없음)
+    h0, w0 = img.shape[:2]
+    if max(h0, w0) > 1280:
+        s = 1280 / max(h0, w0)
+        img = cv2.resize(img, (int(w0 * s), int(h0 * s)),
+                         interpolation=cv2.INTER_AREA)
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
     cal = CALIB.get(gauge_id, {})
     if {"cx", "cy", "radius"} <= set(cal):
