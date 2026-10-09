@@ -1,12 +1,12 @@
 <!DOCTYPE html>
-<html lang="ko">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
-<title>보일러 게이지 점검</title>
+<title>Boiler Gauge Check</title>
 <style>
   * { box-sizing: border-box; }
-  body { font-family: -apple-system, "Malgun Gothic", sans-serif; margin: 0; background: #f2f4f7; color: #222; }
+  body { font-family: -apple-system, "Segoe UI", sans-serif; margin: 0; background: #f2f4f7; color: #222; }
   header { background: #1F4E78; color: #fff; padding: 16px; }
   header h1 { margin: 0; font-size: 20px; }
   main { padding: 12px; max-width: 640px; margin: 0 auto; }
@@ -19,7 +19,7 @@
 </style>
 </head>
 <body>
-<header><h1>🔧 보일러 게이지 점검</h1></header>
+<header><h1>🔧 Boiler Gauge Check</h1></header>
 <main>
   <div class="sec">Cathode</div>
   {% for it in items if it.system == "Cathode" %}
@@ -29,7 +29,7 @@
   {% for it in items if it.system == "Anode" %}
   <a class="equip-link" href="/e/{{ it.id }}"><b>{{ it.name }}</b><span>{{ it.kind }} · {{ it.id }}</span></a>
   {% endfor %}
-  <div class="foot"><a href="/api/export">📥 측정 기록 CSV 내려받기</a></div>
+  <div class="foot"><a href="/api/export">📥 Download readings CSV</a></div>
 </main>
 </body>
 </html>
