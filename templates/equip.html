@@ -1,12 +1,12 @@
 <!DOCTYPE html>
-<html lang="ko">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
-<title>보일러 게이지 점검</title>
+<title>Boiler Gauge Check</title>
 <style>
   * { box-sizing: border-box; }
-  body { font-family: -apple-system, "Malgun Gothic", sans-serif; margin: 0; background: #f2f4f7; color: #222; }
+  body { font-family: -apple-system, "Segoe UI", sans-serif; margin: 0; background: #f2f4f7; color: #222; }
   header { background: #1F4E78; color: #fff; padding: 16px; position: sticky; top: 0; z-index: 10; }
   header h1 { margin: 0; font-size: 20px; }
   header p { margin: 4px 0 0; font-size: 13px; opacity: .85; }
@@ -39,17 +39,17 @@
 </head>
 <body>
 <header>
-  <h1 id="title">설비</h1>
+  <h1 id="title">Equipment</h1>
   <p id="subtitle"></p>
 </header>
 <main>
   <div class="card">
-    <div style="font-size:14px;color:#555;margin-bottom:4px">작업자 이름</div>
-    <input type="text" id="worker" placeholder="예: 김철수" style="margin-top:0">
+    <div style="font-size:14px;color:#555;margin-bottom:4px">Worker name</div>
+    <input type="text" id="worker" placeholder="e.g. John" style="margin-top:0">
   </div>
   <div class="toggle">
-    <button id="btnRun" class="on">가동중</button>
-    <button id="btnStop">정지중</button>
+    <button id="btnRun" class="on">Running</button>
+    <button id="btnStop">Stopped</button>
   </div>
   <div class="prog" id="prog"></div>
   <div id="gauges"></div>
@@ -88,7 +88,7 @@ function render() {
   const list = visibleGauges();
   const box = document.getElementById("gauges");
   const done = list.filter(g => doneSet.has(g.id)).length;
-  document.getElementById("prog").textContent = list.length ? `${done} / ${list.length} 완료` : "이 상태에서는 확인할 게이지가 없습니다";
+  document.getElementById("prog").textContent = list.length ? `${done} / ${list.length} done` : "No gauges to check in this state";
   box.innerHTML = "";
   list.forEach(g => {
     const card = document.createElement("div");
@@ -96,10 +96,10 @@ function render() {
     card.id = "card-" + g.id;
     card.innerHTML = `
       <div class="gname">${doneSet.has(g.id) ? '<span class="ok-badge">✓</span> ' : ""}${esc(g.name)}</div>
-      <div class="gmeta">${esc(g.item || "측정 항목 미등록")} ${g.unit ? "· " + esc(g.unit) : ""}${g.calibrated ? "" : ' · <span style="color:#b26a00">캘리브레이션 필요</span>'}</div>
+      <div class="gmeta">${esc(g.item || "Item not registered")} ${g.unit ? "· " + esc(g.unit) : ""}${g.calibrated ? "" : ' · <span style="color:#b26a00">Calibration needed</span>'}</div>
       <div class="res" style="display:none"></div>
       <input type="file" accept="image/*" capture="environment" style="display:none" id="file-${g.id}">
-      <button class="btn btn-cam" onclick="shoot('${g.id}')">📷 촬영하기</button>`;
+      <button class="btn btn-cam" onclick="shoot('${g.id}')">📷 Take photo</button>`;
     box.appendChild(card);
     card.querySelector("input").addEventListener("change", ev => onPhoto(g, ev.target.files[0]));
   });
@@ -111,7 +111,7 @@ function esc(s) { return String(s == null ? "" : s).replace(/[&<>"]/g, c => ({"&
 
 function shoot(gid) { document.getElementById("file-" + gid).click(); }
 
-// 휴대폰에서 보내기 전에 사진을 1280px로 축소 (전송+판독 속도 향상)
+// Shrink the photo to 1280px before upload (faster upload + reading)
 async function shrinkPhoto(file) {
   try {
     const bmp = await createImageBitmap(file, { imageOrientation: "from-image" });
@@ -131,7 +131,7 @@ async function onPhoto(g, file) {
   const card = document.getElementById("card-" + g.id);
   const res = card.querySelector(".res");
   res.style.display = "block";
-  res.innerHTML = `<img class="thumb" id="thumb-${g.id}"><div style="margin-top:8px;color:#666">전송·판독 중...</div>`;
+  res.innerHTML = `<img class="thumb" id="thumb-${g.id}"><div style="margin-top:8px;color:#666">Uploading / reading...</div>`;
   document.getElementById("thumb-" + g.id).src = URL.createObjectURL(file);
 
   const small = await shrinkPhoto(file);
@@ -142,22 +142,22 @@ async function onPhoto(g, file) {
   try {
     const r = await fetch("/api/read", { method: "POST", body: fd });
     data = await r.json();
-  } catch (e) { data = { error: "서버 연결 실패" }; }
+  } catch (e) { data = { error: "Server connection failed" }; }
 
   if (data.error) {
-    res.innerHTML += `<div class="warn">판독 실패: ${esc(data.error)}<br>아래에 직접 입력해주세요.</div>` + manualHtml(g, "");
+    res.innerHTML += `<div class="warn">Read failed: ${esc(data.error)}<br>Please enter the value manually below.</div>` + manualHtml(g, "");
     return;
   }
   window["_last_" + g.id] = data;
   let html = "";
   if (data.value == null) {
-    html = `<div class="warn">자동 판독: 바늘 각도 ${data.angle_deg}° (캘리브레이션 미등록 — 값을 직접 입력해주세요)</div>` + manualHtml(g, "");
+    html = `<div class="warn">Auto read: needle angle ${data.angle_deg}° (not calibrated — please enter the value manually)</div>` + manualHtml(g, "");
   } else {
     html = `<div class="val">${data.value} <span style="font-size:18px">${esc(data.unit || "")}</span></div>
-      <div style="font-size:12px;color:#888">바늘 각도 ${data.angle_deg}° · 자동 판독</div>
+      <div style="font-size:12px;color:#888">Needle angle ${data.angle_deg}° · auto read</div>
       <div class="row">
-        <button class="btn btn-ok" onclick="confirmReading('${g.id}', false)">✓ 확인</button>
-        <button class="btn btn-edit" onclick="showManual('${g.id}')">직접 입력</button>
+        <button class="btn btn-ok" onclick="confirmReading('${g.id}', false)">✓ Confirm</button>
+        <button class="btn btn-edit" onclick="showManual('${g.id}')">Manual entry</button>
       </div>
       <div class="manual" style="display:none">${manualHtml(g, data.value)}</div>`;
   }
@@ -165,8 +165,8 @@ async function onPhoto(g, file) {
 }
 
 function manualHtml(g, preset) {
-  return `<input type="number" step="any" id="manual-${g.id}" placeholder="측정값 입력" value="${preset == null ? "" : preset}">
-    <button class="btn btn-ok" onclick="confirmReading('${g.id}', true)">✓ 저장</button>`;
+  return `<input type="number" step="any" id="manual-${g.id}" placeholder="Enter value" value="${preset == null ? "" : preset}">
+    <button class="btn btn-ok" onclick="confirmReading('${g.id}', true)">✓ Save</button>`;
 }
 function showManual(gid) {
   const m = document.querySelector("#card-" + gid + " .manual");
@@ -179,20 +179,20 @@ async function confirmReading(gid, manual) {
   let value = last.value;
   if (manual) {
     value = document.getElementById("manual-" + gid).value;
-    if (value === "" || value == null) { toast("값을 입력해주세요"); return; }
+    if (value === "" || value == null) { toast("Please enter a value"); return; }
   }
   const body = {
     equip_id: EQUIP_ID, gauge_id: gid, value: value,
     unit: g.unit || last.unit || "",
-    angle_deg: last.angle_deg || "", state: state === "run" ? "가동중" : "정지중",
+    angle_deg: last.angle_deg || "", state: state === "run" ? "Running" : "Stopped",
     worker: worker.value || "", photo: last.photo || "", manual: manual
   };
   try {
     await fetch("/api/log", { method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body) });
-  } catch (e) { toast("저장 실패 — 다시 시도해주세요"); return; }
+  } catch (e) { toast("Save failed — please try again"); return; }
   doneSet.add(gid);
   localStorage.setItem("done_" + EQUIP_ID + "_" + state, JSON.stringify([...doneSet]));
-  toast("저장됐습니다 ✓");
+  toast("Saved ✓");
   render();
 }
 
