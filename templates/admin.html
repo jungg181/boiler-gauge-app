@@ -32,6 +32,7 @@
   .sys { font-size: 14px; font-weight: bold; color: #37474F; margin: 18px 4px 8px; text-transform: uppercase; letter-spacing: 1px; }
   #toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); background: #222; color: #fff; padding: 12px 20px; border-radius: 24px; display: none; font-size: 15px; z-index: 50; }
   .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .gtoggle { cursor: pointer; user-select: none; -webkit-user-select: none; }
 </style>
 </head>
 <body>
@@ -79,6 +80,7 @@
 
 <script>
 let CFG = null;
+let openDevs = new Set(); // device ids whose gauge list is expanded
 
 function toast(msg) {
   const t = document.getElementById("toast");
@@ -177,20 +179,27 @@ function render() {
         const card = document.createElement("div");
         card.className = "card";
         card.id = "dev-" + dev.id;
+        const gOpen = openDevs.has(dev.id);
         let gauges = (dev.gauges || []).map(g => gaugeHtml(sys.name, grp, dev, g)).join("");
         card.innerHTML = `
           <h2>${grp === "boilers" ? "🔥" : "💧"} ${esc(dev.id)}</h2>
           <label>Equipment name</label>
           <input type="text" data-dev="name" value="${esc(dev.name)}">
           ${grp === "pumps" ? `<label>Connected boilers (comma separated)</label><input type="text" data-dev="boilers" value="${esc((dev.boilers || []).join(","))}">` : ""}
-          <h3>Gauges (${(dev.gauges || []).length})</h3>
-          <div class="gauges">${gauges || '<div style="font-size:13px;color:#888">No gauges yet.</div>'}</div>
+          <h3 class="gtoggle" onclick="toggleGauges('${esc(dev.id)}')">${gOpen ? "▾" : "▸"} Gauges (${(dev.gauges || []).length})</h3>
+          <div class="gauges"${gOpen ? "" : ' style="display:none"'}>${gauges || '<div style="font-size:13px;color:#888">No gauges yet.</div>'}</div>
           <button class="btn btn-add" onclick="addGauge('${esc(sys.name)}','${grp}','${esc(dev.id)}')">+ Add gauge</button>
           <button class="btn btn-del" onclick="delEquipment('${esc(sys.name)}','${grp}','${esc(dev.id)}')">Delete equipment</button>`;
         box.appendChild(card);
       });
     });
   });
+}
+
+function toggleGauges(devId) {
+  if (openDevs.has(devId)) openDevs.delete(devId);
+  else openDevs.add(devId);
+  render();
 }
 
 function findDev(sysName, grp, devId) {
@@ -224,6 +233,7 @@ function addGauge(sysName, grp, devId) {
     if (m) n = Math.max(n, parseInt(m[1]) + 1);
   });
   dev.gauges.push({ id: `${devId}-G${n}`, name: `Gauge ${n}`, item: "", unit: "", check_running: "O", check_stopped: "" });
+  openDevs.add(devId);
   render();
   toast("Added — tap Save all");
 }
