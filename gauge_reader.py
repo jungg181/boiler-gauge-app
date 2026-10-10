@@ -56,8 +56,8 @@ def detect_dial(gray):
     return float(x), float(y), float(r)
 
 
-def _radial_profile(gray, cx, cy, r_inner, r_outer, angles):
-    """For each candidate angle, mean darkness along the radial segment."""
+def _darkness_profile(gray, cx, cy, r_inner, r_outer, angles):
+    """Mean darkness along the radial segment (simple scorer)."""
     h, w = gray.shape
     scores = np.empty(len(angles), dtype=np.float64)
     n_samples = 60
@@ -68,9 +68,60 @@ def _radial_profile(gray, cx, cy, r_inner, r_outer, angles):
         xs = np.clip((cx + ts * dx).astype(int), 0, w - 1)
         ys = np.clip((cy + ts * dy).astype(int), 0, h - 1)
         vals = gray[ys, xs].astype(np.float64)
-        # Darkness score: low mean + low variance = solid dark line (needle),
-        # not a shadow or tick mark.
         scores[i] = (255.0 - vals.mean()) + 0.5 * (255.0 - vals.std())
+    return scores
+
+
+def _radial_profile(gray, cx, cy, r_inner, r_outer, angles):
+    """For each candidate angle, score a thin dark line (needle) standing out
+    from its immediate surroundings.
+
+    Scoring pure darkness mistakes a soft needle shadow for the needle: the
+    shadow is dark along a radial line too. The real needle is a NARROW, very
+    dark bar on a light dial, while a shadow is a BROAD dark band. So we
+    compare the radial line against parallel lines offset to each side at two
+    distances: just outside a needle, and farther out. A broad shadow is dark
+    at both offsets -> rejected. The needle is dark on the line but light at
+    both offsets -> high score. Both contrasts must hold (AND gate).
+
+    The line itself is sampled as a narrow band (not 1px) so thin needles are
+    not missed when the candidate angle is slightly off.
+    """
+    h, w = gray.shape
+    scores = np.empty(len(angles), dtype=np.float64)
+    n_samples = 80
+    band_hw = max(3.0, min(h, w) * 0.006)  # half-width of sampling band
+    off1 = max(4.0, min(h, w) * 0.015)     # just outside a needle
+    off2 = max(10.0, min(h, w) * 0.04)     # outside a typical shadow core
+    ts = np.linspace(r_inner, r_outer, n_samples)
+    band_steps = np.linspace(-band_hw, band_hw, 5)
+    for i, a in enumerate(angles):
+        rad = math.radians(a)
+        dx, dy = math.sin(rad), -math.cos(rad)  # 0 deg = up, clockwise
+        px, py = dy, -dx  # perpendicular unit vector
+        bx = cx + ts * dx
+        by = cy + ts * dy
+
+        def band(ox, oy):
+            acc = None
+            for s in band_steps:
+                xs = np.clip((bx + ox + px * s).astype(int), 0, w - 1)
+                ys = np.clip((by + oy + py * s).astype(int), 0, h - 1)
+                v = gray[ys, xs].astype(np.float64)
+                acc = v if acc is None else acc + v
+            return acc / len(band_steps)
+
+        line = band(0.0, 0.0)
+        side1 = (band(px * off1, py * off1)
+                 + band(-px * off1, -py * off1)) * 0.5
+        side2 = (band(px * off2, py * off2)
+                 + band(-px * off2, -py * off2)) * 0.5
+        c1 = side1.mean() - line.mean()
+        c2 = side2.mean() - line.mean()
+        contrast = min(c1, c2)          # thin line, not a broad shadow
+        dark = 200.0 - line.mean()      # the line itself must be dark
+        solid = 60.0 - line.std()       # needle is uniform along its length
+        scores[i] = 2.0 * contrast + 1.0 * dark + 0.4 * solid
     return scores
 
 
@@ -85,15 +136,25 @@ def needle_angle(gray, cx, cy, radius, coarse_step=2.0, refine_step=0.25):
     r_inner = radius * 0.12
     r_outer = radius * 0.86
 
+    def paired(angles):
+        # Thin-dark-line contrast score, plus a bonus when there is a dark
+        # counterweight tail opposite the candidate (real needles have one;
+        # shadows and dial text do not). This disambiguates the needle from
+        # its own shadow.
+        c = _radial_profile(masked, cx, cy, r_inner, r_outer, angles)
+        d_tail = _darkness_profile(masked, cx, cy, r_inner, r_outer,
+                                   (np.asarray(angles) + 180.0) % 360.0)
+        return c + 0.5 * d_tail
+
     angles = np.arange(0, 360, coarse_step)
-    scores = _radial_profile(masked, cx, cy, r_inner, r_outer, angles)
+    scores = paired(angles)
     best = float(angles[int(np.argmax(scores))])
 
     # Sub-degree refinement around the peak.
     angles2 = np.arange(best - coarse_step * 1.5, best + coarse_step * 1.5 + 1e-9,
                        refine_step)
     angles2 %= 360.0
-    scores2 = _radial_profile(masked, cx, cy, r_inner, r_outer, angles2)
+    scores2 = paired(angles2)
     best2 = float(angles2[int(np.argmax(scores2))])
     return best2
 
